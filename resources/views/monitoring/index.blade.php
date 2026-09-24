@@ -107,6 +107,17 @@
         .cctv-dot.gangguan { background: #eab308; color: #eab308; box-shadow: 0 0 10px #eab30888; }
         .cctv-dot.offline  { background: #ef4444; color: #ef4444; box-shadow: 0 0 10px #ef444488; }
 
+        .cctv-marker {
+            width: 30px; height: 30px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            border: 2px solid rgba(255,255,255,.85);
+            box-shadow: 0 0 12px currentColor;
+        }
+        .cctv-marker svg { width: 17px; height: 17px; stroke: #fff; }
+        .cctv-marker.online   { background: #16a34a; color: #22c55e; }
+        .cctv-marker.gangguan { background: #ca8a04; color: #eab308; }
+        .cctv-marker.offline  { background: #dc2626; color: #ef4444; }
+
         .marker-cluster-online    { background: rgba(34,197,94,.25); }
         .marker-cluster-online div{ background: rgba(34,197,94,.85); }
         .marker-cluster-gangguan  { background: rgba(234,179,8,.25); }
@@ -169,6 +180,13 @@
             display: flex; align-items: center; justify-content: center; transition: all .15s;
         }
         .stream-close-btn:hover { background: rgba(239,68,68,.3); }
+        .stream-refresh-btn {
+            width: 30px; height: 30px; border-radius: 8px; border: none; cursor: pointer;
+            background: rgba(96,165,250,.15); color: #60a5fa; font-size: 18px; line-height: 1;
+            display: flex; align-items: center; justify-content: center; transition: all .15s;
+        }
+        .stream-refresh-btn:hover { background: rgba(96,165,250,.3); }
+        .stream-modal-actions { display: flex; align-items: center; gap: 8px; }
         .stream-body { padding: 0; aspect-ratio: 16/9; background: #000; display: flex; align-items: center; justify-content: center; position: relative; }
         .stream-body video, .stream-body iframe {
             width: 100%; height: 100%; border: none; display: block; background: #000;
@@ -375,7 +393,10 @@
     <div class="stream-modal">
         <div class="stream-modal-header">
             <h3 id="streamTitle">Live Stream</h3>
-            <button class="stream-close-btn" onclick="closeStream()">✕</button>
+            <div class="stream-modal-actions">
+                <button class="stream-refresh-btn" onclick="refreshStream()" title="Refresh kamera" aria-label="Refresh kamera">↻</button>
+                <button class="stream-close-btn" onclick="closeStream()" title="Tutup stream" aria-label="Tutup stream">✕</button>
+            </div>
         </div>
         <div class="stream-body" id="streamBody">
             <div class="stream-placeholder">
@@ -401,11 +422,11 @@
 
     // Stadion Kanjuruhan boundary polygon (area stadion)
     var stadiumBoundary = [
-        [-8.14780, 112.57250],  // Northwest corner
-        [-8.14780, 112.57530],  // Northeast corner
+        [-8.12200, 112.57250], // Northwest corner of expanded monitoring area
+        [-8.12200, 112.57530], // Northeast corner of expanded monitoring area
         [-8.15140, 112.57530],  // Southeast corner
         [-8.15140, 112.57250],  // Southwest corner
-        [-8.14780, 112.57250]   // Close polygon
+        [-8.12200, 112.57250]   // Close polygon
     ];
 
     // Function to check if a point is inside the stadium boundary
@@ -442,7 +463,7 @@
         zoom: 17,
         minZoom: 15,
         maxZoom: 22,
-        maxBounds: [[-8.1380, 112.5620], [-8.1610, 112.5860]],
+        maxBounds: [[-8.1150, 112.5620], [-8.1610, 112.5860]],
         maxBoundsViscosity: 0.9,
         zoomControl: true
     });
@@ -479,10 +500,10 @@
     function makeIcon(status) {
         return L.divIcon({
             className: '',
-            html: '<div class="cctv-dot ' + status + '"></div>',
-            iconSize: [12, 12],
-            iconAnchor: [6, 6],
-            popupAnchor: [0, -10]
+            html: '<div class="cctv-marker ' + status + '"><svg fill="none" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg></div>',
+            iconSize: [30, 30],
+            iconAnchor: [15, 15],
+            popupAnchor: [0, -18]
         });
     }
 
@@ -496,7 +517,7 @@
                 <span style="width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;"></span>
                 ${cam.status.charAt(0).toUpperCase() + cam.status.slice(1)}
             </div>
-            <button class="popup-btn" onclick="openStream('${cam.stream_url}','${cam.nama}')" ${streamDisabled}>${streamLabel}</button>
+            <button class="popup-btn" onclick="openStreamForCamera(${cam.id})" ${streamDisabled}>${streamLabel}</button>
         </div>`;
     }
 
@@ -671,6 +692,16 @@
     });
 
     // ─── Stream Modal ───
+    var currentStreamCameraId = null;
+
+    function openStreamForCamera(cameraId) {
+        var cam = cameraMap[cameraId];
+        if (!cam) return;
+
+        currentStreamCameraId = cameraId;
+        openStream(cam.stream_url, cam.nama);
+    }
+
     function openStream(url, nama) {
         if (!url || url === '') {
             alert('Stream URL tidak tersedia untuk kamera ini.');
@@ -767,6 +798,23 @@
         document.getElementById('streamModal').classList.add('active');
     }
 
+    function refreshStream() {
+        if (currentStreamCameraId === null) return;
+
+        var cam = cameraMap[currentStreamCameraId];
+        if (!cam || !cam.stream_url) {
+            alert('Stream URL tidak tersedia untuk kamera ini.');
+            return;
+        }
+
+        if (window.currentHls) {
+            window.currentHls.destroy();
+            window.currentHls = null;
+        }
+
+        openStream(cam.stream_url, cam.nama);
+    }
+
     function closeStream() {
         var streamBody = document.getElementById('streamBody');
         streamBody.innerHTML = `
@@ -786,6 +834,8 @@
                 console.log('HLS cleanup:', e);
             }
         }
+
+        currentStreamCameraId = null;
         
         document.getElementById('streamModal').classList.remove('active');
     }
